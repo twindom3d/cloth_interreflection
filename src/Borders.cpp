@@ -26,10 +26,15 @@ void Borders::findBorders(Polyhedron& mesh)
   // Call normalize_border to setup border DS -> CGAL precondition
   mesh.normalize_border();
 
-  for (Halfedge_handle halfedge_handle = mesh.border_edges_begin();
-      halfedge_handle != mesh.edges_end(); halfedge_handle++)
+  int counter(0);
+  for (Halfedge_handle halfedge_handle = mesh.border_halfedges_begin();
+      halfedge_handle != mesh.halfedges_end(); halfedge_handle++)
   {
-    all_border_halfedge_handles_.push_back(halfedge_handle->opposite());
+    if (halfedge_handle->is_border())
+    {
+      all_border_halfedge_handles_.push_back(halfedge_handle);
+    }
+    counter++;
   }
 }
 
