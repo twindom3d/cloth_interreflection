@@ -1,9 +1,12 @@
 project(clothe_interreflections)
 cmake_minimum_required(VERSION 2.8)
 
-link_directories()
-include_directories()
+set(GCC_COMPILE_FLAGS "-std=c++11 -O3 -frounding-math")
+add_definitions(${GCC_COMPILE_FLAGS})
 
-add_executable(cleaninterreflections CleanInterreflectionsAppMain.cpp)
+link_directories(/home/will/Downloads/cgal-releases-CGAL-4.8/build/lib/)
+include_directories(${PROJECT_SOURCE_DIR})
 
-TARGET_LINK_LIBRARIES(cleaninterreflections )
+add_executable(cleaninterreflections CleanInterreflectionsAppMain.cpp Borders.cpp)
+
+TARGET_LINK_LIBRARIES(cleaninterreflections CGAL)
