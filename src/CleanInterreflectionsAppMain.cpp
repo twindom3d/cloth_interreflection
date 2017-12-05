@@ -10,6 +10,8 @@
 
 #include <CGAL/IO/Polyhedron_iostream.h>
 
+#include "Trimesh2/TriMesh.h"
+
 #include <Borders.h>
 
 float YSlope(Halfedge_handle halfedge)
@@ -22,23 +24,42 @@ float YSlope(Halfedge_handle halfedge)
   return (halfedge->vertex()->point().y() - next_halfedge->vertex()->point().y())/0.001;
 }
 
+struct isequal {
+  isequal(int x) : x(x) {}
+  bool operator()(Face f) const {
+    return f.label == x;
+  }
+private:
+  int x;
+};
+
+
+
 int main(int argc, char* argv[])
 {
-  char const* filenameIn(argv[1]);
-  char const* filenameOut(argv[2]);
+  char const* filenameInOff(argv[1]);
+  char const* filenameInObj(argv[2]);
+  char const* filenameOutObj(argv[3]);
 
 
 
   // Load off file
-  std::ifstream stream(filenameIn);
+  std::ifstream stream(filenameInOff);
 
   if(!stream)
   {
-        std::cout << "Cannot open file: " << filenameIn <<"!";
+        std::cout << "Cannot open file: " << filenameInOff <<"!";
   }
 
   Polyhedron mesh;
   stream >> mesh;
+
+  // Initialize face ids
+  int i(0);
+  for(Polyhedron::Facet_iterator it = mesh.facets_begin(); it != mesh.facets_end(); ++it)
+  {
+    it->id() = i++;
+  }
 
   // Find, organize and calculate border centroids
   Borders borders(mesh);
@@ -49,12 +70,13 @@ int main(int argc, char* argv[])
 
   // Find arm borders
   // Assumed border furthest left = right arm and border furthest right = left arm
-  // Only consider x largest borders
   Borders::border left_arm_border, right_arm_border;
   right_arm_border.centroid = Point_3(0,0,0);
   left_arm_border.centroid = Point_3(0,0,0);
 
-  for (int i = 0; i < 6; i++)
+  // Only consider x largest borders
+  assert(borders.borders_.size() >= 4);
+  for (int i = 0; i < 4; i++)
   {
     auto border = borders.borders_[i];
 
@@ -146,13 +168,35 @@ int main(int argc, char* argv[])
   auto cutoff_y_left = cutoff_halfedge_left->vertex()->point().y();
   auto cutoff_y_right = cutoff_halfedge_right->vertex()->point().y();
 
+
   std::cout << "cutoff left: " << cutoff_y_left << endl;
   std::cout << "cutoff right: " << cutoff_y_right << endl;
-  // std::cout << "start left: " << start_left_border->vertex()->point() << endl;
+  // std::cout << "cd .start left: " << start_left_border->vertex()->point() << endl;
   // std::cout << "start right: " << start_right_border->vertex()->point() << endl;
 
   // Delete faces in arm hole below min Y value
-  
+  auto to_delete_left = borders.deleteFacesBelowY(left_arm_border, mesh, cutoff_y_left);
+  auto to_delete_right = borders.deleteFacesBelowY(right_arm_border, mesh, cutoff_y_right);
+  vector<int> to_delete_all;
 
-  // Save off file
+  // Combine indices to delete into single vector
+  to_delete_all.reserve( to_delete_left.size() + to_delete_right.size() ); // preallocate memory
+  to_delete_all.insert( to_delete_all.end(), to_delete_left.begin(), to_delete_left.end() );
+  to_delete_all.insert( to_delete_all.end(), to_delete_right.begin(), to_delete_right.end() );
+
+  // Load obj into TriMesh, delete faces and save out
+  TriMesh* trimesh;
+  trimesh = trimesh->read(filenameInObj);
+  trimesh->need_faces();
+  trimesh->need_face_indices();
+
+  for (auto i : to_delete_all)
+  {
+    trimesh->faces[i].label = 1;
+  }
+  vector<Face>::iterator it = std::remove_if(trimesh->faces.begin(), trimesh->faces.end(), isequal(1));
+  trimesh->faces.erase(it, trimesh->faces.end());
+
+  trimesh->write(filenameOutObj);
 }
+

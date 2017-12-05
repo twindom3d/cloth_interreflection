@@ -8,43 +8,47 @@
 #include <Borders.h>
 
 #include <algorithm>
+#include <fstream>
 
 #include <CGAL/squared_distance_3.h>
+#include <CGAL/tags.h>
+
+typedef CGAL::Tag_true  Supports_removal;
 
 
 Borders::Borders(Polyhedron& mesh) {
-  findBorders(mesh);
-  organizeBorders();
+  auto all_borders = findBorders(mesh);
+  organizeBorders(all_borders);
 }
 
 Borders::~Borders() {
   // TODO Auto-generated destructor stub
 }
 
-void Borders::findBorders(Polyhedron& mesh)
+vector<Halfedge_handle> Borders::findBorders(Polyhedron& mesh)
 {
   // Call normalize_border to setup border DS -> CGAL precondition
   mesh.normalize_border();
 
-  int counter(0);
+  vector<Halfedge_handle> all_border_halfedge_handles;
   for (Halfedge_handle halfedge_handle = mesh.border_halfedges_begin();
       halfedge_handle != mesh.halfedges_end(); halfedge_handle++)
   {
     if (halfedge_handle->is_border())
     {
-      all_border_halfedge_handles_.push_back(halfedge_handle);
+      all_border_halfedge_handles.push_back(halfedge_handle);
     }
-    counter++;
   }
+  return all_border_halfedge_handles;
 }
 
 // take all border handles and organize them based on the hole they surround
-void Borders::organizeBorders()
+void Borders::organizeBorders(vector<Halfedge_handle> all_border_halfedge_handles)
 {
   Borders::border current_border;
-  while(!all_border_halfedge_handles_.empty())
+  while(!all_border_halfedge_handles.empty())
   {
-    auto start = all_border_halfedge_handles_[0];
+    auto start = all_border_halfedge_handles[0];
     current_border.edges.push_back(start);
     auto current = start->next();
     while (current != start)
@@ -54,12 +58,34 @@ void Borders::organizeBorders()
     }
     for (auto& handle : current_border.edges)
     {
-      auto toerase = find(all_border_halfedge_handles_.begin(),
-          all_border_halfedge_handles_.end(), handle);
-      all_border_halfedge_handles_.erase(toerase);
+      auto toerase = find(all_border_halfedge_handles.begin(),
+          all_border_halfedge_handles.end(), handle);
+      all_border_halfedge_handles.erase(toerase);
     }
     borders_.push_back(current_border);
     current_border.edges.clear();
+  }
+}
+
+// Builds a border given an initial border halfedge
+Borders::border Borders::buildBorder(Halfedge_handle halfedge)
+{
+  Borders::border border;
+
+  if (!halfedge->is_border())
+  {
+    std::cout << "Initial halfedge is not a border halfedge\n";
+    return border;
+  }
+
+  auto start = halfedge;
+  border.edges.push_back(start);
+
+  halfedge = halfedge->next();
+  while (halfedge != start)
+  {
+    border.edges.push_back(halfedge);
+    halfedge = halfedge->next();
   }
 }
 
@@ -147,6 +173,63 @@ void Borders::smoothBorder(Borders::border border)
   for (int i = 0; i < size; i++)
   {
     border.edges[i]->vertex()->point() = new_pts[i];
+  }
+}
+
+// Iterates around border and deletes faces that fail deleteCondition
+// Continues until all faces on border pass deleteCondition
+vector<int> Borders::deleteFacesBelowY(Borders::border& border, Polyhedron& mesh, float y)
+{
+  bool done;
+  vector<Halfedge_handle> to_delete;
+  vector<int> to_delete_indices;
+  do
+  {
+    Halfedge_handle passing_halfedge;
+    done = true;
+    for (auto& halfedge : border.edges) // iterate over all borders and mark for deletion
+    {
+      if (belowY(halfedge, y))
+      {
+        done = false;
+        // TODO: Need to save index of deleted face
+        if (!halfedge->opposite()->is_border()) // Make sure face hasn't already been deleted
+        {
+          to_delete.push_back(halfedge->opposite());
+          to_delete_indices.push_back(halfedge->opposite()->facet()->id());
+
+        }
+      } else
+      {
+        passing_halfedge = halfedge; // rebuilding border after deletion for next iteration requires a border halfedge
+      }
+    }
+    for (auto halfedge : to_delete)
+    {
+      if (halfedge->is_border()) continue;
+      mesh.erase_facet(halfedge);
+    }
+    // std::cout << "num of faces deleted: " << to_delete.size() << endl;
+    border = buildBorder(passing_halfedge);
+    to_delete.clear();
+
+    // // Write off file for debugging
+    // std::ofstream os("dump.off");
+    // if (!os) std::cout << "Couldn't open file for writing: " << endl;
+    // os << mesh;
+    // os.close();
+    } while (!done);
+    return to_delete_indices;
+}
+
+bool Borders::belowY(Halfedge_handle& halfedge, float y_max)
+{
+  if (halfedge->vertex()->point().y() < y_max)
+  {
+    return true;
+  } else 
+  {
+    return false;
   }
 }
 
